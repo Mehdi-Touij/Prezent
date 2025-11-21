@@ -1,4 +1,3 @@
-
 /*Disable all dev mods for complex components if the user forgot to disable them in the admin area*/
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".dev-edite-mode").forEach((el) => {
