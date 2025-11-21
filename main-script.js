@@ -1,10 +1,5 @@
-//Andriy code - Unified Script with Guards
-(function() {
-  // Prevent double initialization
-  if (window.__andriyScriptLoaded) return;
-  window.__andriyScriptLoaded = true;
 
-/*Disable all dev mods for complex components*/
+/*Disable all dev mods for complex components if the user forgot to disable them in the admin area*/
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".dev-edite-mode").forEach((el) => {
     if (el.classList.contains("is-on")) {
@@ -14,97 +9,99 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ==========================================================================
-   Lottie Playback on Visibility & Hover Control
+   1. Lottie Playback on Visibility & Hover Control
    ========================================================================== */
+/*Play lottie when visible and contol hover START */
+
 (function () {
   const origLoad = bodymovin.loadAnimation;
   bodymovin.loadAnimation = function (config) {
     const anim = origLoad(config);
+
     if (config.container) config.container.__lottieAnim = anim;
     return anim;
   };
 })();
 
-function initLottie(element) {
-  // Guard against double initialization
-  if (element.__lottieInitialized) return;
-  element.__lottieInitialized = true;
-
-  const lottieSrc = element.getAttribute("data-lottie-src");
-  const playOnHover = element.hasAttribute("data-play-hover");
-  const loopLottie = element.hasAttribute("data-lottie-loop");
-  const rendererType = element.getAttribute("data-lottie-renderer") || "svg";
-
-  const animationConfig = {
-    container: element,
-    renderer: rendererType,
-    path: lottieSrc,
-    rendererSettings: {
-      preserveAspectRatio: "xMidYMid slice",
-    },
-    loop: !playOnHover && loopLottie,
-    autoplay: !playOnHover,
-  };
-
-  const anim = bodymovin.loadAnimation(animationConfig);
-
-  if (playOnHover) {
-    const parentWrapper = element.closest(".lottie-wrapper-hover");
-    if (parentWrapper) {
-      anim.setDirection(1);
-      parentWrapper.addEventListener("mouseenter", () => {
-        anim.setDirection(1);
-        anim.play();
-      });
-      parentWrapper.addEventListener("mouseleave", () => {
-        anim.setDirection(-1);
-        anim.play();
-      });
-    }
-  }
-}
-
 document.addEventListener("DOMContentLoaded", function () {
   const observer = new IntersectionObserver(
-    (entries, obs) => {
+    (entries, observer) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
-          initLottie(entry.target);
-          obs.unobserve(entry.target);
+          const element = entry.target;
+          const lottieSrc = element.getAttribute("data-lottie-src");
+          const playOnHover = element.hasAttribute("data-play-hover");
+          const loopLottie = element.hasAttribute("data-lottie-loop");
+          const rendererType =
+            element.getAttribute("data-lottie-renderer") || "svg";
+
+          const animationConfig = {
+            container: element,
+            renderer: rendererType,
+            path: lottieSrc,
+            rendererSettings: {
+              preserveAspectRatio: "xMidYMid slice",
+            },
+          };
+
+          if (playOnHover) {
+            animationConfig.loop = false;
+            animationConfig.autoplay = false;
+            const anim = bodymovin.loadAnimation(animationConfig);
+
+            const parentWrapper = element.closest(".lottie-wrapper-hover");
+            if (parentWrapper) {
+              parentWrapper.addEventListener("mouseenter", () => {
+                anim.setDirection(1);
+                anim.play();
+              });
+              parentWrapper.addEventListener("mouseleave", () => {
+                anim.setDirection(-1);
+                anim.play();
+              });
+            }
+          } else {
+            animationConfig.loop = loopLottie;
+            animationConfig.autoplay = true;
+            bodymovin.loadAnimation(animationConfig);
+          }
+
+          observer.unobserve(element);
         }
       });
     },
     {
-      rootMargin: "0px 0px 200px 0px",
+      rootMargin: "0px",
       threshold: 0.1,
     }
   );
 
   const lottieElements = document.querySelectorAll("[data-lottie-src]");
-  lottieElements.forEach((el) => {
-    // Only set styles if not already set
-    if (!el.style.position) {
-      el.style.position = "relative";
-      el.style.width = "100%";
-      el.style.height = "100%";
-      el.style.overflow = "hidden";
-    }
+  lottieElements.forEach((element) => {
+    element.style.position = "relative";
+    element.style.width = "100%";
+    element.style.height = "100%";
+    element.style.overflow = "hidden";
 
-    if (el.hasAttribute("data-no-wait")) {
-      initLottie(el);
-    } else {
-      observer.observe(el);
-    }
+    observer.observe(element);
   });
 });
+/*Play lottie when visible and contol hover END */
 
 /* ==========================================================================
-   Interactive Time Tabs with Video & Lottie Crossfade
-   ========================================================================== */
+     7. Interactive Time Tabs with Video & Lottie Crossfade
+     ========================================================================== */
 (function () {
+  // Initialize all interactive grid wrappers under the given root
   function initInteractiveGrids(root = document) {
-    const wrappers = root.querySelectorAll(".interactive-grid_wrapper:not(.__inited)");
-    if (!wrappers.length || typeof gsap === "undefined" || typeof ScrollTrigger === "undefined") {
+    const wrappers = root.querySelectorAll(
+      ".interactive-grid_wrapper:not(.__inited)"
+    );
+    if (
+      !wrappers.length ||
+      typeof gsap === "undefined" ||
+      typeof ScrollTrigger === "undefined"
+    ) {
       return;
     }
     gsap.registerPlugin(ScrollTrigger);
@@ -114,6 +111,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // Set up a single interactive grid wrapper
   function setupInteractiveGrid(wrapper) {
     const duration = parseFloat(wrapper.dataset.stepDuration) || 6;
     const autoMediaHeight = wrapper.dataset.mediaWrapperAuto === "true";
@@ -133,7 +131,9 @@ document.addEventListener("DOMContentLoaded", function () {
       progressBar: el.querySelector(".interactive-progress"),
       progressWrapper: el.querySelector(".interactive-progress_wrap"),
       lottieEl: el.querySelector(".lottie-element"),
-      contentInteractiveMedia: el.querySelector(".content-in-interactive-media"),
+      contentInteractiveMedia: el.querySelector(
+        ".content-in-interactive-media"
+      ),
     }));
 
     let heightCache = [];
@@ -144,6 +144,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let isInViewport = false;
     let resizeDebounce = null;
 
+    // Calculate and cache heights of hidden tab content
     function measureHeights() {
       heightCache = tabs.map((tab) => {
         const width = tab.hidden.getBoundingClientRect().width;
@@ -163,6 +164,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     measureHeights();
 
+    // Re-measure on window resize
     window.addEventListener("resize", () => {
       clearTimeout(resizeDebounce);
       resizeDebounce = setTimeout(() => {
@@ -215,6 +217,7 @@ document.addEventListener("DOMContentLoaded", function () {
       clearProgressTween();
     }
 
+    // Set up scroll-triggered autoplay
     const scrollStart = wrapper.dataset.scrollStart || "top 100%";
     const scrollEnd = wrapper.dataset.scrollEnd || "bottom 0%";
     ScrollTrigger.create({
@@ -239,6 +242,7 @@ document.addEventListener("DOMContentLoaded", function () {
       },
     });
 
+    // Reset all tabs to their initial state
     function resetTabs() {
       tabs.forEach((tab) => {
         tab.container.classList.remove("is-interactive-active");
@@ -256,6 +260,7 @@ document.addEventListener("DOMContentLoaded", function () {
       });
     }
 
+    // Activate a specific tab by index
     function activateTab(index, userClicked) {
       const mobileUpStop = wrapper.dataset.mobileUpStop === "true";
       activeIndex = index;
@@ -334,7 +339,11 @@ document.addEventListener("DOMContentLoaded", function () {
         });
       }
 
-      if (animateInterContent && window.innerWidth >= 991 && tab.contentInteractiveMedia) {
+      if (
+        animateInterContent &&
+        window.innerWidth >= 991 &&
+        tab.contentInteractiveMedia
+      ) {
         tab.contentInteractiveMedia.style.position = "relative";
         tab.contentInteractiveMedia.style.zIndex = "10";
         gsap.fromTo(
@@ -353,10 +362,13 @@ document.addEventListener("DOMContentLoaded", function () {
       }
 
       if (userClicked && window.innerWidth < 991 && !mobileUpStop) {
-        const header = document.querySelector("header") || document.querySelector(".navbar_component");
+        const header =
+          document.querySelector("header") ||
+          document.querySelector(".navbar_component");
         const headerH = header ? header.getBoundingClientRect().height : 0;
         const extraOff = 30;
-        const topY = tab.container.getBoundingClientRect().top + window.pageYOffset;
+        const topY =
+          tab.container.getBoundingClientRect().top + window.pageYOffset;
         window.scrollTo({ top: topY - headerH - extraOff, behavior: "smooth" });
       }
 
@@ -365,8 +377,11 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     }
 
+    // Attach click handlers to each tab
     tabs.forEach((tab, i) => {
-      const clickArea = tab.container.querySelector(".interactive-tab_content_wrap");
+      const clickArea = tab.container.querySelector(
+        ".interactive-tab_content_wrap"
+      );
       if (clickArea) {
         clickArea.addEventListener("click", () => {
           if (activeIndex === i) return;
@@ -375,13 +390,16 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
 
+    // Show the first tab by default
     activateTab(0, false);
   }
 
+  // Initialize on page load
   document.addEventListener("DOMContentLoaded", () => {
     initInteractiveGrids();
   });
 
+  // Re-init and re-measure heights when dynamically loading new grids via .menu_tab click
   document.addEventListener("click", (e) => {
     if (e.target.closest(".menu_tab")) {
       setTimeout(() => {
@@ -389,6 +407,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (typeof ScrollTrigger !== "undefined") {
           ScrollTrigger.refresh();
         }
+        // trigger a resize event so measureHeights runs for new wrappers
         window.dispatchEvent(new Event("resize"));
       }, 50);
     }
@@ -396,13 +415,12 @@ document.addEventListener("DOMContentLoaded", function () {
 })();
 
 /* ==========================================================================
-   Simple Custom Tabs
-   ========================================================================== */
+     9. Simple Custom Tabs
+     ========================================================================== */
 document.querySelectorAll(".tab-wrapper").forEach((wrapper) => {
-  if (wrapper.__tabsInitialized) return;
-  wrapper.__tabsInitialized = true;
-
-  const tabs = wrapper.querySelectorAll(".menu_tab, .switch_tab, .tab-img_switch");
+  const tabs = wrapper.querySelectorAll(
+    ".menu_tab, .switch_tab, .tab-img_switch"
+  );
   const panels = wrapper.querySelectorAll(".content_tab");
 
   tabs.forEach((tab, idx) => {
@@ -415,17 +433,19 @@ document.querySelectorAll(".tab-wrapper").forEach((wrapper) => {
       if (!target) return;
 
       target.classList.add("is-active");
+      // force reflow for CSS animation
       void target.offsetWidth;
       target.classList.add("visible-anime");
     });
   });
 
+  // optionally activate the first tab
   if (tabs.length) tabs[0].click();
 });
 
 /* ==========================================================================
-   Mobile Sliders Initialization & Destruction
-   ========================================================================== */
+           10. Mobile Sliders Initialization & Destruction
+========================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
   const BREAKPOINT = 768;
   const instances = new Map();
@@ -433,7 +453,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function initSliders() {
     document.querySelectorAll(".menu-tabs-slider").forEach((el) => {
       if (!instances.has(el)) {
-        let space = parseInt(el.dataset.sliderSpace, 10);
+        let space = parseInt(el.dataset.sliderSpace, 8);
         if (isNaN(space)) space = 8;
         const swiper = new Swiper(el, {
           slidesPerView: "auto",
@@ -494,8 +514,9 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ==========================================================================
-   Mob tabs for plans
-   ========================================================================== */
+           11. Mob tabs for plans START
+========================================================================== */
+
 (function ($) {
   const BREAKPOINT = 767;
   let isInitialized = false;
@@ -505,7 +526,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const $root = $(".plan-pricing-tabs-and-content");
     if (!$root.length) return;
 
-    $root.find(".plan-tab-wrapper").removeClass("is-active").eq(0).addClass("is-active");
+    $root
+      .find(".plan-tab-wrapper")
+      .removeClass("is-active")
+      .eq(0)
+      .addClass("is-active");
     $root.find(".plan-tab-content").hide().eq(0).show();
 
     $root.on("click.mobileTabs", ".plan-tab-wrapper", function (e) {
@@ -556,17 +581,17 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 })(jQuery);
 
+/*Mob tabs for plan END */
+
 /* ==========================================================================
-   Slider for Awards carousel
-   ========================================================================== */
+           12. Slider for Awwards carusel START
+========================================================================== */
+
 document.addEventListener("DOMContentLoaded", () => {
   const sliders = document.querySelectorAll(".awwards-slider");
 
   if (sliders.length > 0) {
     sliders.forEach((sliderEl) => {
-      if (sliderEl.__swiperInitialized) return;
-      sliderEl.__swiperInitialized = true;
-
       new Swiper(sliderEl, {
         slidesPerView: 3.5,
         centeredSlides: true,
@@ -586,19 +611,24 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+/*Slider for Awwards carusel END */
+
 /* ==========================================================================
-   Slider for Related resources
-   ========================================================================== */
+           12. Slider for Related resources START
+========================================================================== */
+
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".blog-swiper-wrap").forEach((sliderEl) => {
-    if (sliderEl.__swiperInitialized) return;
-    sliderEl.__swiperInitialized = true;
-
+    // Ð—Ð½Ð°Ñ…Ð¾Ð´Ð¸Ð¼Ð¾ Ð½Ð°Ð¹Ð±Ð»Ð¸Ð¶Ñ‡Ð¸Ð¹ Ð·Ð°Ð³Ð°Ð»ÑŒÐ½Ð¸Ð¹ wrapper
     const block = sliderEl.closest(".block-wrapper");
+
+    // Ð¡Ñ‚Ñ€Ñ–Ð»ÐºÐ¸ Ð²ÑÐµÑ€ÐµÐ´Ð¸Ð½Ñ– Ñ†ÑŒÐ¾Ð³Ð¾ block-wrapper
     const prevArrow = block.querySelector("#blog-arrow-slider-prev");
     const nextArrow = block.querySelector("#blog-arrow-slider-next");
+    // Scrollbar â€” Ñ‚Ð¾Ð¹ ÑÐ°Ð¼Ð¸Ð¹ Ð±Ð»Ð¾Ðº
     const scrollbarEl = block.querySelector(".swiper-scrollbar");
 
+    // Ð†Ð½Ñ–Ñ†Ñ–Ð°Ð»Ñ–Ð·ÑƒÑ”Ð¼Ð¾ Swiper Ð±ÐµÐ· .swiper-container
     const swiper = new Swiper(sliderEl, {
       slidesPerView: 4,
       spaceBetween: 20,
@@ -617,43 +647,49 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     });
 
+    // Ð¤ÑƒÐ½ÐºÑ†Ñ–Ñ Ð´Ð»Ñ Ð´Ð¾Ð´Ð°Ð²Ð°Ð½Ð½Ñ/Ð·Ð½ÑÑ‚Ñ‚Ñ ÐºÐ»Ð°ÑÑƒ is-on
     function updateArrowState() {
       prevArrow.classList.toggle("is-on", !swiper.isBeginning);
       nextArrow.classList.toggle("is-on", !swiper.isEnd);
     }
 
+    // Ð’ÑÑ‚Ð°Ð½Ð¾Ð²Ð»ÑŽÑ”Ð¼Ð¾ Ð¿Ð¾Ñ‡Ð°Ñ‚ÐºÐ¾Ð²Ð¸Ð¹ ÑÑ‚Ð°Ð½ Ñ– ÑÐ»Ñ–Ð´ÐºÑƒÑ”Ð¼Ð¾ Ð·Ð° Ð·Ð¼Ñ–Ð½Ð°Ð¼Ð¸
     updateArrowState();
     swiper.on("slideChange", updateArrowState);
     swiper.on("breakpoint", updateArrowState);
   });
 });
 
+/*Slider for Related resources END */
+
 /* ==========================================================================
-   Continuous Marquee Initialization
-   ========================================================================== */
+     15. Continuous Marquee Initialization
+     ========================================================================== */
 function initMarquees(selector, speed) {
   const marquees = document.querySelectorAll(selector);
   if (!marquees.length) return;
 
   marquees.forEach((parent) => {
-    if (parent.__marqueeInitialized) return;
-    parent.__marqueeInitialized = true;
-
     const original = parent.innerHTML;
+    // duplicate content twice for seamless loop
     parent.insertAdjacentHTML("beforeend", original);
     parent.insertAdjacentHTML("beforeend", original);
 
     let offset = 0;
     let paused = false;
 
+    // uncomment if pause-on-hover is desired
+    /*
+          parent.addEventListener("mouseenter", () => { paused = true; });
+          parent.addEventListener("mouseleave", () => { paused = false; });
+          */
+
     setInterval(() => {
       if (paused) return;
       const first = parent.firstElementChild;
-      if (first) {
-        first.style.marginLeft = `-${offset}px`;
-        if (offset > first.clientWidth) offset = 0;
-        else offset += speed;
-      }
+      first.style.marginLeft = `-${offset}px`;
+      if (offset > first.clientWidth) offset = 0;
+      else offset += speed;
     }, 16);
   });
 }
@@ -663,12 +699,12 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ==========================================================================
-   Navbar changes after scroll
-   ========================================================================== */
+     10. Navbar changes after scroll START
+     ========================================================================== */
+
 document.addEventListener("DOMContentLoaded", () => {
-  const THRESHOLD = 2;
+  const THRESHOLD = 2; // scroll distance threshold (px)
   const block = document.querySelector(".navbar_component");
-  if (!block) return;
 
   window.addEventListener("scroll", () => {
     const scrolled = window.pageYOffset;
@@ -682,8 +718,8 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ==========================================================================
-   Filters accordion custom
-   ========================================================================== */
+     7. Filters accordion custom START
+     ========================================================================== */
 $(function () {
   function initFiltersAccordion() {
     var $groups = $(".filters_filter-group");
@@ -702,7 +738,11 @@ $(function () {
           $content.slideUp(200);
           $group.removeClass("is-active");
         } else {
-          $groups.filter(".is-active").removeClass("is-active").find(".flex-filtres-left").slideUp(200);
+          $groups
+            .filter(".is-active")
+            .removeClass("is-active")
+            .find(".flex-filtres-left")
+            .slideUp(200);
 
           $group.addClass("is-active");
           $content.slideDown(200);
@@ -722,7 +762,7 @@ $(function () {
   });
 });
 
-/* Filters open close on tablet */
+/*Filters open close on tablet */
 $(function () {
   function initFilterToggle() {
     var $wrapper = $(".filters_lists-wrapper");
@@ -764,16 +804,18 @@ $(function () {
   });
 });
 
+/*Filters accordion custom END */
+
 /* ==========================================================================
-   Button copied
-   ========================================================================== */
+     7. Button copied START
+     ========================================================================== */
+
 document.addEventListener("DOMContentLoaded", () => {
-  const copyButtons = document.querySelectorAll(".card-wrapper-spacebet-blog .button.is-copy");
+  const copyButtons = document.querySelectorAll(
+    ".card-wrapper-spacebet-blog .button.is-copy"
+  );
 
   copyButtons.forEach((btn) => {
-    if (btn.__copyInitialized) return;
-    btn.__copyInitialized = true;
-
     btn.addEventListener("click", async (e) => {
       e.preventDefault();
 
@@ -818,29 +860,32 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-/* ==========================================================================
-   Main page interaction wrapper
-   ========================================================================== */
+/*Button copied END */
+
+/*******NEW */
+
 document.addEventListener("DOMContentLoaded", () => {
-  if (typeof gsap === "undefined") return;
-  
   const mm = gsap.matchMedia();
   mm.add("(min-width: 992px)", () => {
-    document.querySelectorAll(".main-page-interection-wrapper").forEach((comp) => {
-      comp.querySelectorAll(".interactive-grid_wrapper").forEach((sec) => {
-        ScrollTrigger.create({
-          trigger: sec,
-          start: "top 50%",
-          end: "bottom 50%",
-          onEnter: () => activateSection(sec),
-          onEnterBack: () => activateSection(sec),
+    document
+      .querySelectorAll(".main-page-interection-wrapper")
+      .forEach((comp) => {
+        comp.querySelectorAll(".interactive-grid_wrapper").forEach((sec) => {
+          ScrollTrigger.create({
+            trigger: sec,
+            start: "top 50%",
+            end: "bottom 50%",
+            onEnter: () => activateSection(sec),
+            onEnterBack: () => activateSection(sec),
+          });
         });
       });
-    });
 
     function activateSection(sec) {
       const parent = sec.closest(".main-page-interection-wrapper");
-      parent.querySelectorAll(".interactive-grid_wrapper").forEach((s) => s.classList.remove("is-active-scrolling"));
+      parent
+        .querySelectorAll(".interactive-grid_wrapper")
+        .forEach((s) => s.classList.remove("is-active-scrolling"));
       sec.classList.add("is-active-scrolling");
 
       const lottie = sec.querySelector(".lottie-element");
@@ -853,18 +898,19 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-/* ==========================================================================
-   FAQ Collapse
-   ========================================================================== */
+
+
 document.addEventListener("click", function (event) {
   const element = event.target.closest('[js-faq-collapse="true"]');
   if (element) {
     if (!element.classList.contains("open")) {
-      document.querySelectorAll('[js-faq-collapse="true"].open').forEach(function (item) {
-        if (item !== element) {
-          item.click();
-        }
-      });
+      document
+        .querySelectorAll('[js-faq-collapse="true"].open')
+        .forEach(function (item) {
+          if (item !== element) {
+            item.click();
+          }
+        });
 
       element.classList.add("open");
     } else {
@@ -873,28 +919,31 @@ document.addEventListener("click", function (event) {
   }
 });
 
-/* ==========================================================================
-   HERO animation
-   ========================================================================== */
-document.addEventListener("DOMContentLoaded", () => {
-  if (typeof SplitType === "undefined" || typeof gsap === "undefined") return;
+/*HERO animation START */
 
-  document.querySelectorAll("[data-headline-split-appear-hero]").forEach((el) => {
-    if (el.__splitInitialized) return;
-    el.__splitInitialized = true;
-    
-    new SplitType(el, {
-      types: "words",
-      lineClass: "word",
+document.addEventListener("DOMContentLoaded", () => {
+  document
+    .querySelectorAll("[data-headline-split-appear-hero]")
+    .forEach((el) => {
+      new SplitType(el, {
+        types: "words",
+        lineClass: "word",
+      });
     });
-  });
 
   const firstElsHero = document.querySelectorAll("[data-first-el-appear-hero]");
-  const opacityElsHero = document.querySelectorAll("[data-opacity-el-appear-hero]");
-  const linesHero = document.querySelectorAll("[data-headline-split-appear-hero] .word");
-  const secondElsHero = document.querySelectorAll("[data-second-el-appear-hero]");
+  const opacityElsHero = document.querySelectorAll(
+    "[data-opacity-el-appear-hero]"
+  );
+  const linesHero = document.querySelectorAll(
+    "[data-headline-split-appear-hero] .word"
+  );
+  const secondElsHero = document.querySelectorAll(
+    "[data-second-el-appear-hero]"
+  );
 
-  if (!firstElsHero.length && !linesHero.length && !secondElsHero.length) return;
+  if (!firstElsHero.length && !linesHero.length && !secondElsHero.length)
+    return;
 
   const tlHero = gsap.timeline();
 
@@ -907,82 +956,90 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (opacityElsHero.length) {
-    tlHero.to(opacityElsHero, {
-      opacity: 1,
-      duration: 0,
-      ease: "power2.out",
-    }, 0);
+    tlHero.to(
+      opacityElsHero,
+      {
+        opacity: 1,
+        duration: 0,
+        ease: "power2.out",
+      },
+      0
+    );
   }
 
   if (linesHero.length) {
-    tlHero.to(linesHero, {
-      y: 0,
-      opacity: 1,
-      duration: 1,
-      ease: "power2.out",
-      stagger: 0.2,
-    }, 0.1);
+    tlHero.to(
+      linesHero,
+      {
+        y: 0,
+        opacity: 1,
+        duration: 1,
+        ease: "power2.out",
+        stagger: 0.2,
+      },
+      0.1
+    );
   }
 
   if (secondElsHero.length) {
-    tlHero.to(secondElsHero, {
-      y: 0,
-      opacity: 1,
-      duration: 1,
-      ease: "power2.out",
-      stagger: 0.1,
-    }, 0);
+    tlHero.to(
+      secondElsHero,
+      {
+        y: 0,
+        opacity: 1,
+        duration: 1,
+        ease: "power2.out",
+        stagger: 0.1,
+      },
+      0
+    );
   }
 });
 
-/* ==========================================================================
-   All blocks animation on Scroll
-   ========================================================================== */
-if (typeof gsap !== "undefined" && typeof ScrollTrigger !== "undefined") {
-  gsap.registerPlugin(ScrollTrigger);
+/*HERO animation END */
 
-  document.querySelectorAll("[data-animation-wrap]").forEach((wrap) => {
-    if (wrap.__animWrapInitialized) return;
-    wrap.__animWrapInitialized = true;
+/*All blocks animation on Scroll START */
+gsap.registerPlugin(ScrollTrigger);
 
-    const headlineEls = wrap.querySelectorAll("[data-headline-split-appear]");
-    if (headlineEls.length && typeof SplitType !== "undefined") {
-      headlineEls.forEach((el) => {
-        if (el.__splitInitialized) return;
-        el.__splitInitialized = true;
-        new SplitType(el, { types: "words", wordClass: "word" });
-      });
-      ScrollTrigger.refresh();
-    }
+document.querySelectorAll("[data-animation-wrap]").forEach((wrap) => {
+  const headlineEls = wrap.querySelectorAll("[data-headline-split-appear]");
+  if (headlineEls.length) {
+    headlineEls.forEach((el) => {
+      new SplitType(el, { types: "words", wordClass: "word" });
+    });
+    ScrollTrigger.refresh();
+  }
 
-    const firstEls = wrap.querySelectorAll("[data-first-el-appear]");
-    const words = wrap.querySelectorAll("[data-headline-split-appear] .word");
-    const secondEls = wrap.querySelectorAll("[data-second-el-appear]");
+  const firstEls = wrap.querySelectorAll("[data-first-el-appear]");
+  const words = wrap.querySelectorAll("[data-headline-split-appear] .word");
+  const secondEls = wrap.querySelectorAll("[data-second-el-appear]");
 
-    if (!firstEls.length && !words.length && !secondEls.length) return;
+  if (!firstEls.length && !words.length && !secondEls.length) return;
 
-    const tl = gsap.timeline({
-      scrollTrigger: {
-        trigger: wrap,
-        start: "top 80%",
-        toggleActions: "play none none none",
+  const tl = gsap.timeline({
+    scrollTrigger: {
+      trigger: wrap,
+      start: "top 80%",
+      toggleActions: "play none none none",
+    },
+  });
+
+  if (firstEls.length) {
+    tl.to(firstEls, {
+      opacity: 1,
+      y: 0,
+      duration: 1,
+      ease: "power2.out",
+      onStart() {
+        firstEls.forEach((el) => el.classList.add("is-animated"));
       },
     });
+  }
 
-    if (firstEls.length) {
-      tl.to(firstEls, {
-        opacity: 1,
-        y: 0,
-        duration: 1,
-        ease: "power2.out",
-        onStart() {
-          firstEls.forEach((el) => el.classList.add("is-animated"));
-        },
-      });
-    }
-
-    if (words.length) {
-      tl.to(words, {
+  if (words.length) {
+    tl.to(
+      words,
+      {
         y: 0,
         opacity: 1,
         duration: 1,
@@ -991,11 +1048,15 @@ if (typeof gsap !== "undefined" && typeof ScrollTrigger !== "undefined") {
         onStart() {
           words.forEach((w) => w.classList.add("is-animated"));
         },
-      }, 0.1);
-    }
+      },
+      0.1
+    );
+  }
 
-    if (secondEls.length) {
-      tl.to(secondEls, {
+  if (secondEls.length) {
+    tl.to(
+      secondEls,
+      {
         y: 0,
         opacity: 1,
         duration: 1,
@@ -1004,54 +1065,60 @@ if (typeof gsap !== "undefined" && typeof ScrollTrigger !== "undefined") {
         onStart() {
           secondEls.forEach((el) => el.classList.add("is-animated"));
         },
-      }, 0);
-    }
+      },
+      0
+    );
+  }
 
-    const numEls = wrap.querySelectorAll("[anime-numbers]");
-    if (numEls.length) {
-      numEls.forEach((el) => {
-        const rawText = el.textContent.trim();
-        const match = rawText.match(/-?\d+(\.\d+)?/);
-        if (!match) return;
-        const endStr = match[0];
-        const endValue = parseFloat(endStr);
-        const decimals = (endStr.split(".")[1] || "").length;
-        const prefix = rawText.slice(0, match.index);
-        const suffix = rawText.slice(match.index + endStr.length);
-        const startValue = endValue * 0.7;
-        el.textContent = decimals ? `${prefix}${startValue.toFixed(decimals)}${suffix}` : `${prefix}${Math.floor(startValue)}${suffix}`;
-        const obj = { value: startValue };
-        tl.to(obj, {
+  const numEls = wrap.querySelectorAll("[anime-numbers]");
+  if (numEls.length) {
+    numEls.forEach((el) => {
+      const rawText = el.textContent.trim();
+      const match = rawText.match(/-?\d+(\.\d+)?/);
+      if (!match) return;
+      const endStr = match[0];
+      const endValue = parseFloat(endStr);
+      const decimals = (endStr.split(".")[1] || "").length;
+      const prefix = rawText.slice(0, match.index);
+      const suffix = rawText.slice(match.index + endStr.length);
+      const startValue = endValue * 0.7;
+      el.textContent = decimals
+        ? `${prefix}${startValue.toFixed(decimals)}${suffix}`
+        : `${prefix}${Math.floor(startValue)}${suffix}`;
+      const obj = { value: startValue };
+      tl.to(
+        obj,
+        {
           value: endValue,
           duration: 1.5,
           ease: "power1.out",
           onUpdate() {
-            const current = decimals ? obj.value.toFixed(decimals) : Math.floor(obj.value);
+            const current = decimals
+              ? obj.value.toFixed(decimals)
+              : Math.floor(obj.value);
             el.textContent = `${prefix}${current}${suffix}`;
           },
-        }, 0);
-      });
-    }
-  });
-
-  gsap.utils.toArray("[data-samefirts-el-appear]").forEach((el) => {
-    if (el.__samefirtsInitialized) return;
-    el.__samefirtsInitialized = true;
-
-    gsap.to(el, {
-      scrollTrigger: {
-        trigger: el,
-        start: "top 80%",
-        toggleActions: "play none none none",
-      },
-      opacity: 1,
-      duration: 1,
-      ease: "power2.out",
-      onStart() {
-        el.classList.add("is-animated");
-      },
+        },
+        0
+      );
     });
-  });
-}
+  }
+});
 
-})(); // End of main wrapper
+gsap.utils.toArray("[data-samefirts-el-appear]").forEach((el) => {
+  gsap.to(el, {
+    scrollTrigger: {
+      trigger: el,
+      start: "top 80%",
+      toggleActions: "play none none none",
+    },
+    opacity: 1,
+    duration: 1,
+    ease: "power2.out",
+    onStart() {
+      el.classList.add("is-animated");
+    },
+  });
+});
+
+/*All blocks animation on Scroll END */
