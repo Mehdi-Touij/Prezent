@@ -1,4 +1,3 @@
-
 /*Disable all dev mods for complex components if the user forgot to disable them in the admin area*/
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".dev-edite-mode").forEach((el) => {
@@ -9,88 +8,120 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /* ==========================================================================
-   1. Lottie Playback on Visibility & Hover Control
+   1. Lottie Playback on Visibility & Hover Control - UPDATED WITH HERO FIX
    ========================================================================== */
-/*Play lottie when visible and contol hover START */
+/*Play lottie when visible and control hover START */
 
 (function () {
   const origLoad = bodymovin.loadAnimation;
   bodymovin.loadAnimation = function (config) {
     const anim = origLoad(config);
-
     if (config.container) config.container.__lottieAnim = anim;
     return anim;
   };
 })();
 
 document.addEventListener("DOMContentLoaded", function () {
-  const observer = new IntersectionObserver(
-    (entries, observer) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          const element = entry.target;
-          const lottieSrc = element.getAttribute("data-lottie-src");
-          const playOnHover = element.hasAttribute("data-play-hover");
-          const loopLottie = element.hasAttribute("data-lottie-loop");
-          const rendererType =
-            element.getAttribute("data-lottie-renderer") || "svg";
-
-          const animationConfig = {
-            container: element,
-            renderer: rendererType,
-            path: lottieSrc,
-            rendererSettings: {
-              preserveAspectRatio: "xMidYMid slice",
-            },
-          };
-
-          if (playOnHover) {
-            animationConfig.loop = false;
-            animationConfig.autoplay = false;
-            const anim = bodymovin.loadAnimation(animationConfig);
-
-            const parentWrapper = element.closest(".lottie-wrapper-hover");
-            if (parentWrapper) {
-              parentWrapper.addEventListener("mouseenter", () => {
-                anim.setDirection(1);
-                anim.play();
-              });
-              parentWrapper.addEventListener("mouseleave", () => {
-                anim.setDirection(-1);
-                anim.play();
-              });
-            }
-          } else {
-            animationConfig.loop = loopLottie;
-            animationConfig.autoplay = true;
-            bodymovin.loadAnimation(animationConfig);
-          }
-
-          observer.unobserve(element);
-        }
-      });
-    },
-    {
-      rootMargin: "0px",
-      threshold: 0.1,
-    }
-  );
-
   const lottieElements = document.querySelectorAll("[data-lottie-src]");
+  
   lottieElements.forEach((element) => {
+    // ✅ Skip if already loaded (prevents conflicts)
+    if (element.__lottieAnim || element.hasAttribute("data-lottie-loaded")) {
+      return;
+    }
+
     element.style.position = "relative";
     element.style.width = "100%";
     element.style.height = "100%";
     element.style.overflow = "hidden";
 
+    const lottieSrc = element.getAttribute("data-lottie-src");
+    const playOnHover = element.hasAttribute("data-play-hover");
+    const loopLottie = element.hasAttribute("data-lottie-loop");
+    const noWait = element.hasAttribute("data-no-wait"); // ✅ Check for hero sections
+    const rendererType = element.getAttribute("data-lottie-renderer") || "svg";
+
+    const animationConfig = {
+      container: element,
+      renderer: rendererType,
+      path: lottieSrc,
+      rendererSettings: {
+        preserveAspectRatio: "xMidYMid slice",
+      },
+    };
+
+    // ✅ IMMEDIATE PLAYBACK FOR HERO SECTIONS (data-no-wait)
+    if (noWait) {
+      if (playOnHover) {
+        animationConfig.loop = false;
+        animationConfig.autoplay = false;
+        const anim = bodymovin.loadAnimation(animationConfig);
+
+        const parentWrapper = element.closest(".lottie-wrapper-hover");
+        if (parentWrapper) {
+          parentWrapper.addEventListener("mouseenter", () => {
+            anim.setDirection(1);
+            anim.play();
+          });
+          parentWrapper.addEventListener("mouseleave", () => {
+            anim.setDirection(-1);
+            anim.play();
+          });
+        }
+      } else {
+        animationConfig.loop = loopLottie;
+        animationConfig.autoplay = true;
+        bodymovin.loadAnimation(animationConfig);
+      }
+      element.setAttribute("data-lottie-loaded", "true"); // ✅ Mark as loaded
+      return; // ✅ Skip IntersectionObserver for hero
+    }
+
+    // ✅ LAZY LOADING FOR OTHER LOTTIES (scroll-triggered for performance)
+    const observer = new IntersectionObserver(
+      (entries, observer) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            if (playOnHover) {
+              animationConfig.loop = false;
+              animationConfig.autoplay = false;
+              const anim = bodymovin.loadAnimation(animationConfig);
+
+              const parentWrapper = element.closest(".lottie-wrapper-hover");
+              if (parentWrapper) {
+                parentWrapper.addEventListener("mouseenter", () => {
+                  anim.setDirection(1);
+                  anim.play();
+                });
+                parentWrapper.addEventListener("mouseleave", () => {
+                  anim.setDirection(-1);
+                  anim.play();
+                });
+              }
+            } else {
+              animationConfig.loop = loopLottie;
+              animationConfig.autoplay = true;
+              bodymovin.loadAnimation(animationConfig);
+            }
+            element.setAttribute("data-lottie-loaded", "true"); // ✅ Mark as loaded
+            observer.unobserve(element);
+          }
+        });
+      },
+      {
+        rootMargin: "0px",
+        threshold: 0.1,
+      }
+    );
+
     observer.observe(element);
   });
 });
-/*Play lottie when visible and contol hover END */
+/*Play lottie when visible and control hover END */
 
 /* ==========================================================================
-     7. Interactive Time Tabs with Video & Lottie Crossfade
-     ========================================================================== */
+   7. Interactive Time Tabs with Video & Lottie Crossfade
+   ========================================================================== */
 (function () {
   // Initialize all interactive grid wrappers under the given root
   function initInteractiveGrids(root = document) {
@@ -619,16 +650,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".blog-swiper-wrap").forEach((sliderEl) => {
-    // Ð—Ð½Ð°Ñ…Ð¾Ð´Ð¸Ð¼Ð¾ Ð½Ð°Ð¹Ð±Ð»Ð¸Ð¶Ñ‡Ð¸Ð¹ Ð·Ð°Ð³Ð°Ð»ÑŒÐ½Ð¸Ð¹ wrapper
+    // Знаходимо найближчий загальний wrapper
     const block = sliderEl.closest(".block-wrapper");
 
-    // Ð¡Ñ‚Ñ€Ñ–Ð»ÐºÐ¸ Ð²ÑÐµÑ€ÐµÐ´Ð¸Ð½Ñ– Ñ†ÑŒÐ¾Ð³Ð¾ block-wrapper
+    // Стрілки всередині цього block-wrapper
     const prevArrow = block.querySelector("#blog-arrow-slider-prev");
     const nextArrow = block.querySelector("#blog-arrow-slider-next");
-    // Scrollbar â€” Ñ‚Ð¾Ð¹ ÑÐ°Ð¼Ð¸Ð¹ Ð±Ð»Ð¾Ðº
+    // Scrollbar – той самий блок
     const scrollbarEl = block.querySelector(".swiper-scrollbar");
 
-    // Ð†Ð½Ñ–Ñ†Ñ–Ð°Ð»Ñ–Ð·ÑƒÑ”Ð¼Ð¾ Swiper Ð±ÐµÐ· .swiper-container
+    // Ініціалізуємо Swiper без .swiper-container
     const swiper = new Swiper(sliderEl, {
       slidesPerView: 4,
       spaceBetween: 20,
@@ -647,13 +678,13 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     });
 
-    // Ð¤ÑƒÐ½ÐºÑ†Ñ–Ñ Ð´Ð»Ñ Ð´Ð¾Ð´Ð°Ð²Ð°Ð½Ð½Ñ/Ð·Ð½ÑÑ‚Ñ‚Ñ ÐºÐ»Ð°ÑÑƒ is-on
+    // Функція для додавання/зняття класу is-on
     function updateArrowState() {
       prevArrow.classList.toggle("is-on", !swiper.isBeginning);
       nextArrow.classList.toggle("is-on", !swiper.isEnd);
     }
 
-    // Ð’ÑÑ‚Ð°Ð½Ð¾Ð²Ð»ÑŽÑ”Ð¼Ð¾ Ð¿Ð¾Ñ‡Ð°Ñ‚ÐºÐ¾Ð²Ð¸Ð¹ ÑÑ‚Ð°Ð½ Ñ– ÑÐ»Ñ–Ð´ÐºÑƒÑ”Ð¼Ð¾ Ð·Ð° Ð·Ð¼Ñ–Ð½Ð°Ð¼Ð¸
+    // Встановлюємо початковий стан і слідкуємо за змінами
     updateArrowState();
     swiper.on("slideChange", updateArrowState);
     swiper.on("breakpoint", updateArrowState);
