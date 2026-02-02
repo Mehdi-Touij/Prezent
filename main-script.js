@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const lottieElements = document.querySelectorAll("[data-lottie-src]");
   
   lottieElements.forEach((element) => {
-    // ✅ Skip if already loaded (prevents conflicts)
+    // Skip if already loaded (prevents conflicts)
     if (element.__lottieAnim || element.hasAttribute("data-lottie-loaded")) {
       return;
     }
@@ -38,7 +38,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const lottieSrc = element.getAttribute("data-lottie-src");
     const playOnHover = element.hasAttribute("data-play-hover");
     const loopLottie = element.hasAttribute("data-lottie-loop");
-    const noWait = element.hasAttribute("data-no-wait"); // ✅ Check for hero sections
+    const noWait = element.hasAttribute("data-no-wait");
     const rendererType = element.getAttribute("data-lottie-renderer") || "svg";
 
     const animationConfig = {
@@ -50,7 +50,7 @@ document.addEventListener("DOMContentLoaded", function () {
       },
     };
 
-    // ✅ IMMEDIATE PLAYBACK FOR HERO SECTIONS (data-no-wait)
+    // IMMEDIATE PLAYBACK FOR HERO SECTIONS (data-no-wait)
     if (noWait) {
       if (playOnHover) {
         animationConfig.loop = false;
@@ -73,11 +73,11 @@ document.addEventListener("DOMContentLoaded", function () {
         animationConfig.autoplay = true;
         bodymovin.loadAnimation(animationConfig);
       }
-      element.setAttribute("data-lottie-loaded", "true"); // ✅ Mark as loaded
-      return; // ✅ Skip IntersectionObserver for hero
+      element.setAttribute("data-lottie-loaded", "true");
+      return;
     }
 
-    // ✅ LAZY LOADING FOR OTHER LOTTIES (scroll-triggered for performance)
+    // LAZY LOADING FOR OTHER LOTTIES (scroll-triggered for performance)
     const observer = new IntersectionObserver(
       (entries, observer) => {
         entries.forEach((entry) => {
@@ -103,7 +103,7 @@ document.addEventListener("DOMContentLoaded", function () {
               animationConfig.autoplay = true;
               bodymovin.loadAnimation(animationConfig);
             }
-            element.setAttribute("data-lottie-loaded", "true"); // ✅ Mark as loaded
+            element.setAttribute("data-lottie-loaded", "true");
             observer.unobserve(element);
           }
         });
@@ -650,16 +650,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".blog-swiper-wrap").forEach((sliderEl) => {
-    // Знаходимо найближчий загальний wrapper
     const block = sliderEl.closest(".block-wrapper");
-
-    // Стрілки всередині цього block-wrapper
     const prevArrow = block.querySelector("#blog-arrow-slider-prev");
     const nextArrow = block.querySelector("#blog-arrow-slider-next");
-    // Scrollbar – той самий блок
     const scrollbarEl = block.querySelector(".swiper-scrollbar");
 
-    // Ініціалізуємо Swiper без .swiper-container
     const swiper = new Swiper(sliderEl, {
       slidesPerView: 4,
       spaceBetween: 20,
@@ -678,13 +673,11 @@ document.addEventListener("DOMContentLoaded", () => {
       },
     });
 
-    // Функція для додавання/зняття класу is-on
     function updateArrowState() {
       prevArrow.classList.toggle("is-on", !swiper.isBeginning);
       nextArrow.classList.toggle("is-on", !swiper.isEnd);
     }
 
-    // Встановлюємо початковий стан і слідкуємо за змінами
     updateArrowState();
     swiper.on("slideChange", updateArrowState);
     swiper.on("breakpoint", updateArrowState);
@@ -702,18 +695,11 @@ function initMarquees(selector, speed) {
 
   marquees.forEach((parent) => {
     const original = parent.innerHTML;
-    // duplicate content twice for seamless loop
     parent.insertAdjacentHTML("beforeend", original);
     parent.insertAdjacentHTML("beforeend", original);
 
     let offset = 0;
     let paused = false;
-
-    // uncomment if pause-on-hover is desired
-    /*
-          parent.addEventListener("mouseenter", () => { paused = true; });
-          parent.addEventListener("mouseleave", () => { paused = false; });
-          */
 
     setInterval(() => {
       if (paused) return;
@@ -734,7 +720,7 @@ document.addEventListener("DOMContentLoaded", () => {
      ========================================================================== */
 
 document.addEventListener("DOMContentLoaded", () => {
-  const THRESHOLD = 2; // scroll distance threshold (px)
+  const THRESHOLD = 2;
   const block = document.querySelector(".navbar_component");
 
   window.addEventListener("scroll", () => {
