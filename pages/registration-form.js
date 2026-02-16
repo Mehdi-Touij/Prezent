@@ -108,7 +108,7 @@ checkUTMParameters();
 /* ============================================
    2. MAIN FORM SUBMISSION + VALIDATION
    ============================================ */
-document.addEventListener('DOMContentLoaded', function () {
+function initFormSubmission() {
     var form = document.getElementById('wf-form-client-registration');
     if (!form) return; // Exit if form not on this page
 
