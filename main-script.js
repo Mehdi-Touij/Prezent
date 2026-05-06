@@ -712,22 +712,24 @@ document.addEventListener("DOMContentLoaded", () => {
 document.addEventListener("DOMContentLoaded", () => {
   const THRESHOLD = 2; // scroll distance threshold (px)
   const block = document.querySelector(".navbar_component");
+  if (!block) return;
 
-let scrollTicking = false;
-window.addEventListener("scroll", () => {
-  if (!scrollTicking) {
-    requestAnimationFrame(() => {
-      const scrolled = window.pageYOffset;
-      if (scrolled >= THRESHOLD) {
-        block.classList.add("is-scroll");
-      } else {
-        block.classList.remove("is-scroll");
-      }
-      scrollTicking = false;
-    });
-    scrollTicking = true;
-  }
-}, { passive: true });
+  let scrollTicking = false;
+  window.addEventListener("scroll", () => {
+    if (!scrollTicking) {
+      requestAnimationFrame(() => {
+        const scrolled = window.pageYOffset;
+        if (scrolled >= THRESHOLD) {
+          block.classList.add("is-scroll");
+        } else {
+          block.classList.remove("is-scroll");
+        }
+        scrollTicking = false;
+      });
+      scrollTicking = true;
+    }
+  }, { passive: true });
+});
 
 /* ==========================================================================
      7. Filters accordion custom START
