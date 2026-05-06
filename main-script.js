@@ -670,27 +670,35 @@ function initMarquees(selector, speed) {
 
   marquees.forEach((parent) => {
     const original = parent.innerHTML;
-    // duplicate content twice for seamless loop
     parent.insertAdjacentHTML("beforeend", original);
     parent.insertAdjacentHTML("beforeend", original);
 
-    let offset = 0;
-    let paused = false;
-
-    // uncomment if pause-on-hover is desired
-    /*
-          parent.addEventListener("mouseenter", () => { paused = true; });
-          parent.addEventListener("mouseleave", () => { paused = false; });
-          */
-
-    setInterval(() => {
-      if (paused) return;
-      const first = parent.firstElementChild;
-      first.style.marginLeft = `-${offset}px`;
-      if (offset > first.clientWidth) offset = 0;
-      else offset += speed;
-    }, 16);
+    // Calculate animation duration from speed
+    // (higher speed = shorter duration)
+    const firstChild = parent.firstElementChild;
+    const width = firstChild.offsetWidth;
+    const duration = width / (speed * 60);
+    
+    parent.style.display = 'flex';
+    parent.style.willChange = 'transform';
+    parent.querySelectorAll(':scope > *').forEach(child => {
+      child.style.flexShrink = '0';
+      child.style.animation = `marquee-scroll ${duration}s linear infinite`;
+    });
   });
+
+  // Inject keyframes once
+  if (!document.getElementById('marquee-keyframes')) {
+    const style = document.createElement('style');
+    style.id = 'marquee-keyframes';
+    style.textContent = `
+      @keyframes marquee-scroll {
+        from { transform: translateX(0); }
+        to { transform: translateX(-100%); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
