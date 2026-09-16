@@ -1,228 +1,302 @@
 /**
- * Prezent.ai - Form Scripts v2 (Hosted on GitHub)
- * File: pages/expand-form-2.js  —  replaces pages/expand-form.js on the
- * /exp/register/* pages. The original expand-form.js is left untouched.
- * Consolidated: UTM tracking, form submission, phone input,
- * country sync, geotargeting, swiper
+ * Prezent.ai - Form Scripts v2
+ * File: pages/expand-form-2.js
  *
- * v2 - performance pass:
- *   - jQuery dependency removed (plain JS), so the extra jQuery copy can be deleted
- *   - intl-tel-input JS + CSS + utils.js are loaded lazily, off the critical path
- *   - the 5s location.reload() after submit is gone
- *   - form validation / submission logic is unchanged from v1
+ * Replaces pages/expand-form.js on the /exp/register/* pages.
+ * The original expand-form.js is left untouched as a rollback.
+ *
+ * LOADING PRINCIPLE
+ * -----------------
+ * Webflow's own HTML + CSS + scripts render first. Nothing in this file
+ * blocks that. Work is split into three tiers:
+ *
+ *   Tier 1 - instant, no network   : UTM fields, geotargeting, country seed
+ *   Tier 2 - when form is in view  : intl-tel-input (~50 KB) for the flag dropdown
+ *   Tier 3 - on phone field touch  : utils.js (241 KB) for number formatting
+ *
+ * REPLACES THESE 4 PAGE TAGS (delete them from Webflow body code):
+ *   jquery.min.js            87 KB  -> deleted, this file is plain JS
+ *   swiper@11 bundle        169 KB  -> deleted, site-wide Swiper 8 is what runs
+ *   intlTelInput.min.js      ~9 KB  -> loaded here, Tier 2
+ *   utils.js                241 KB  -> loaded here, Tier 3
+ *
+ * AND THESE 2 PAGE TAGS (delete them from Webflow head code):
+ *   intlTelInput.min.css    ~20 KB  -> loaded here, Tier 2
+ *   swiper@11 CSS            18 KB  -> deleted, site-wide Swiper 8 CSS is what applies
+ *
+ * Form validation and submission logic is byte-for-byte the behaviour of v1.
  */
 
-/* ============================================
-   0. SMALL HELPERS
-   ============================================ */
-function onReady(fn) {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', fn);
-    } else {
-        fn();
-    }
-}
+(function () {
+    'use strict';
 
-function loadScript(src) {
-    return new Promise(function (resolve, reject) {
-        var existing = document.querySelector('script[data-lazy-src="' + src + '"]');
-        if (existing) {
-            existing.addEventListener('load', resolve);
-            existing.addEventListener('error', reject);
-            return;
+    var ITI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.8';
+
+
+    /* ========================================================
+       0. HELPERS
+       ======================================================== */
+
+    function onReady(fn) {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', fn);
+        } else {
+            fn();
         }
-        var s = document.createElement('script');
-        s.src = src;
-        s.async = true;
-        s.setAttribute('data-lazy-src', src);
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-    });
-}
-
-function loadStylesheet(href) {
-    if (document.querySelector('link[href="' + href + '"]')) return;
-    var l = document.createElement('link');
-    l.rel = 'stylesheet';
-    l.href = href;
-    document.head.appendChild(l);
-}
-
-// Runs `fn` once, on whichever happens first: user touches the form,
-// the form scrolls into view, or the browser goes idle.
-function whenNeeded(target, fn) {
-    var done = false;
-    function go() {
-        if (done) return;
-        done = true;
-        fn();
     }
 
-    if (target) {
-        ['focusin', 'pointerdown', 'touchstart'].forEach(function (evt) {
-            target.addEventListener(evt, go, { once: true, passive: true });
+    function loadScript(src) {
+        return new Promise(function (resolve, reject) {
+            var existing = document.querySelector('script[data-lazy="' + src + '"]');
+            if (existing) {
+                if (existing.dataset.loaded === '1') return resolve();
+                existing.addEventListener('load', function () { resolve(); });
+                existing.addEventListener('error', reject);
+                return;
+            }
+            var s = document.createElement('script');
+            s.src = src;
+            s.async = true;
+            s.setAttribute('data-lazy', src);
+            s.onload = function () { s.dataset.loaded = '1'; resolve(); };
+            s.onerror = reject;
+            document.head.appendChild(s);
         });
+    }
 
-        if ('IntersectionObserver' in window) {
-            var io = new IntersectionObserver(function (entries) {
-                if (entries.some(function (e) { return e.isIntersecting; })) {
-                    io.disconnect();
-                    go();
-                }
+    function loadStylesheet(href) {
+        if (document.querySelector('link[href="' + href + '"]')) return;
+        var l = document.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = href;
+        document.head.appendChild(l);
+    }
+
+    // Run fn once, on whichever comes first: the user interacting with `el`,
+    // `el` scrolling into view, or the browser being idle. Keeps work off the
+    // critical path while guaranteeing it always eventually happens.
+    function whenNeeded(el, events, fn) {
+        var done = false;
+        function go() {
+            if (done) return;
+            done = true;
+            fn();
+        }
+
+        if (el) {
+            events.forEach(function (evt) {
+                el.addEventListener(evt, go, { once: true, passive: true });
             });
-            io.observe(target);
+            if ('IntersectionObserver' in window) {
+                var io = new IntersectionObserver(function (entries) {
+                    if (entries.some(function (e) { return e.isIntersecting; })) {
+                        io.disconnect();
+                        go();
+                    }
+                });
+                io.observe(el);
+            }
+        }
+
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(go, { timeout: 3000 });
+        } else {
+            setTimeout(go, 1500);
         }
     }
 
-    // Safety net: always load shortly after the page settles.
-    if ('requestIdleCallback' in window) {
-        requestIdleCallback(go, { timeout: 2500 });
-    } else {
-        setTimeout(go, 1200);
-    }
-}
-
-
-/* ============================================
-   1. UTM PARAMETERS (with cookie fallback)
-   ============================================ */
-function checkUTMParameters() {
-    const trackingParams = [
-        'utm_source',
-        'utm_medium',
-        'utm_campaign',
-        'utm_term',
-        'utm_content',
-        'gclid'
-    ];
-
-    const formFieldMapping = {
-        'utm_source': 'utm-source',
-        'utm_medium': 'utm-medium',
-        'utm_campaign': 'utm-campaign',
-        'utm_term': 'utm-term',
-        'gclid': 'gclid'
-    };
-
-    function populateFormFields(trackingData) {
-        if (!trackingData) return;
-        Object.keys(trackingData).forEach(function (param) {
-            var fieldId = formFieldMapping[param];
-            if (fieldId) {
-                var field = document.getElementById(fieldId);
-                if (field) {
-                    field.value = trackingData[param];
-                }
-            }
-        });
-    }
-
-    function getURLParameters() {
-        var urlParams = new URLSearchParams(window.location.search);
-        var trackingData = {};
-        var hasTracking = false;
-        trackingParams.forEach(function (param) {
-            var value = urlParams.get(param);
-            if (value) {
-                trackingData[param] = value;
-                hasTracking = true;
-            }
-        });
-        return hasTracking ? trackingData : null;
-    }
-
-    function getCookie(name) {
-        var value = '; ' + document.cookie;
-        var parts = value.split('; ' + name + '=');
-        if (parts.length === 2) {
-            return parts.pop().split(';').shift();
+    // Same as whenNeeded but with NO idle fallback - only fires on real
+    // interaction. Used for utils.js so visitors who never touch the phone
+    // field never pay its 241 KB.
+    function onFirstInteraction(el, events, fn) {
+        if (!el) return;
+        var done = false;
+        function go() {
+            if (done) return;
+            done = true;
+            fn();
         }
-        return null;
+        events.forEach(function (evt) {
+            el.addEventListener(evt, go, { once: true, passive: true });
+        });
     }
 
-    function parseTrackingFromCookieURL(cookieValue) {
-        if (!cookieValue) return null;
+    function countryNameFromCode(code) {
+        if (!code) return '';
         try {
-            var decodedValue = decodeURIComponent(cookieValue);
-            var url = new URL(decodedValue);
-            var urlParams = new URLSearchParams(url.search);
-            var trackingData = {};
-            var hasTracking = false;
+            return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || code;
+        } catch (e) {
+            return code;
+        }
+    }
+
+
+    /* ========================================================
+       TIER 1 - INSTANT, NO NETWORK
+       ======================================================== */
+
+    /* --- 1a. UTM parameters (with cookie fallback) --- */
+    function checkUTMParameters() {
+        var trackingParams = [
+            'utm_source', 'utm_medium', 'utm_campaign',
+            'utm_term', 'utm_content', 'gclid'
+        ];
+
+        var formFieldMapping = {
+            'utm_source': 'utm-source',
+            'utm_medium': 'utm-medium',
+            'utm_campaign': 'utm-campaign',
+            'utm_term': 'utm-term',
+            'gclid': 'gclid'
+        };
+
+        function populateFormFields(trackingData) {
+            if (!trackingData) return;
+            Object.keys(trackingData).forEach(function (param) {
+                var fieldId = formFieldMapping[param];
+                if (!fieldId) return;
+                var field = document.getElementById(fieldId);
+                if (field) field.value = trackingData[param];
+            });
+        }
+
+        function collect(search) {
+            var urlParams = new URLSearchParams(search);
+            var data = {};
+            var found = false;
             trackingParams.forEach(function (param) {
                 var value = urlParams.get(param);
                 if (value) {
-                    trackingData[param] = value;
-                    hasTracking = true;
+                    data[param] = value;
+                    found = true;
                 }
             });
-            return hasTracking ? trackingData : null;
-        } catch (error) {
-            return null;
+            return found ? data : null;
         }
-    }
 
-    // Main logic: check URL first, then cookie fallback
-    var trackingData = getURLParameters();
-    if (trackingData) {
-        populateFormFields(trackingData);
-        return { source: 'url', data: trackingData };
-    }
+        function getCookie(name) {
+            var value = '; ' + document.cookie;
+            var parts = value.split('; ' + name + '=');
+            return parts.length === 2 ? parts.pop().split(';').shift() : null;
+        }
 
-    var cookieValue = getCookie('__gtm_campaign_url');
-    if (cookieValue) {
-        trackingData = parseTrackingFromCookieURL(cookieValue);
+        // URL first
+        var trackingData = collect(window.location.search);
         if (trackingData) {
             populateFormFields(trackingData);
-            return { source: 'cookie', data: trackingData };
+            return;
+        }
+
+        // Cookie fallback
+        var cookieValue = getCookie('__gtm_campaign_url');
+        if (!cookieValue) return;
+        try {
+            var url = new URL(decodeURIComponent(cookieValue));
+            trackingData = collect(url.search);
+            if (trackingData) populateFormFields(trackingData);
+        } catch (e) {
+            /* malformed cookie - ignore */
         }
     }
 
-    return { source: 'none', data: null };
-}
-
-// The hidden UTM inputs are inside the form, so wait for the DOM.
-onReady(checkUTMParameters);
-
-
-/* ============================================
-   2. MAIN FORM SUBMISSION + VALIDATION
-   (logic unchanged from v1)
-   ============================================ */
-onReady(function () {
-    var form = document.getElementById('wf-form-client-registration-expand');
-    if (!form) return; // Exit if form not on this page
-
-    var workEmail = document.getElementById('work-email-l');
-    var phoneInput = document.getElementById('phone-number-l');
-    var customSubmitBtn = document.getElementById('submit-2');
-    var originalSubmitBtn = form.querySelector('input[type="submit"]');
-
-    if (!customSubmitBtn) return;
-
-    // Hide the original submit button
-    if (originalSubmitBtn) {
-        originalSubmitBtn.style.display = 'none';
+    /* --- 1b. Geotargeting (conditional on path) --- */
+    function initGeotargeting() {
+        if (window.location.href.indexOf('/registration/platform') !== -1) {
+            var showDefault = function () {
+                var nodes = document.getElementsByClassName(
+                    'geotargetlygeocontent1711351295995_default'
+                );
+                for (var i = 0; i < nodes.length; i++) {
+                    nodes[i].style.display = 'inline';
+                }
+            };
+            var first = document.getElementsByTagName('script')[0];
+            var y = document.createElement('script');
+            y.async = true;
+            y.src = 'https://g1584674684.co/gc?winurl=' +
+                encodeURIComponent(window.location) +
+                '&refurl=' + document.referrer +
+                '&id=-NtoU5wvSHI2ffsEI_Mk';
+            y.onerror = showDefault;
+            first.parentNode.insertBefore(y, first);
+        } else {
+            var els = document.getElementsByClassName(
+                'geotargetlygeocontent1711351295995_content_2'
+            );
+            for (var j = 0; j < els.length; j++) {
+                els[j].style.display = 'block';
+            }
+        }
     }
 
-    // Phone number validation
-    function validatePhoneNumber(phoneNumber) {
-        var cleanNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
-        var isValidNumber = /^\d+$/.test(cleanNumber);
-        var hasValidLength = cleanNumber.length >= 7 && cleanNumber.length <= 15;
-        return isValidNumber && hasValidLength;
+    /* --- 1c. Seed the hidden country field ---
+       'country-selected-l' is a hidden REQUIRED field. In v1 it was filled by
+       the phone widget, so if that widget failed the submit button silently
+       did nothing. Here it is filled independently, straight from the IP
+       lookup, so the form is never blocked by a library. intl-tel-input
+       overwrites it with its own country name once it loads (Tier 2), keeping
+       the submitted value identical to v1. */
+    function seedCountryField() {
+        var field = document.getElementById('country-selected-l');
+        if (!field) return;
+
+        var controller = ('AbortController' in window) ? new AbortController() : null;
+        var timer = setTimeout(function () { if (controller) controller.abort(); }, 2500);
+
+        fetch('https://ipinfo.io/json', {
+            signal: controller ? controller.signal : undefined
+        })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (data) {
+                clearTimeout(timer);
+                var code = data && data.country;
+                window.__prezentGeoCountry = code || null;
+                if (code && !field.value.trim()) {
+                    field.value = countryNameFromCode(code);
+                }
+            })
+            .catch(function () {
+                clearTimeout(timer);
+                window.__prezentGeoCountry = null;
+            });
     }
 
-    // Form validation
-    function validateForm() {
-        var requiredFields = form.querySelectorAll('[required]');
-        var isValid = true;
 
-        requiredFields.forEach(function (field) {
-            if (!field.value.trim()) {
-                isValid = false;
-                field.classList.add('error');
-            } else {
+    /* ========================================================
+       2. FORM SUBMISSION + VALIDATION  (logic unchanged from v1)
+       ======================================================== */
+
+    // Assigned in Tier 3 once utils.js is available.
+    var formatPhoneForWebflowSubmit = function () {};
+
+    function initForm() {
+        var form = document.getElementById('wf-form-client-registration-expand');
+        if (!form) return;
+
+        var workEmail = document.getElementById('work-email-l');
+        var phoneInput = document.getElementById('phone-number-l');
+        var customSubmitBtn = document.getElementById('submit-2');
+        var originalSubmitBtn = form.querySelector('input[type="submit"]');
+        if (!customSubmitBtn) return;
+
+        if (originalSubmitBtn) originalSubmitBtn.style.display = 'none';
+
+        function validatePhoneNumber(phoneNumber) {
+            var clean = phoneNumber.replace(/[\s\-\(\)]/g, '');
+            return /^\d+$/.test(clean) && clean.length >= 7 && clean.length <= 15;
+        }
+
+        function validateForm() {
+            var requiredFields = form.querySelectorAll('[required]');
+            var isValid = true;
+
+            requiredFields.forEach(function (field) {
+                if (!field.value.trim()) {
+                    isValid = false;
+                    field.classList.add('error');
+                    return;
+                }
+
                 if (field.id === 'phone-number-l') {
                     if (!validatePhoneNumber(field.value)) {
                         isValid = false;
@@ -233,7 +307,8 @@ onReady(function () {
                             errorMessage.classList.add('error-message');
                             field.parentNode.insertBefore(errorMessage, field.nextSibling);
                         }
-                        errorMessage.textContent = 'Please enter a valid phone number (numbers only)';
+                        errorMessage.textContent =
+                            'Please enter a valid phone number (numbers only)';
                     } else {
                         field.classList.remove('error');
                         var errMsg = field.nextElementSibling;
@@ -244,336 +319,298 @@ onReady(function () {
                 } else {
                     field.classList.remove('error');
                 }
-            }
-        });
+            });
 
-        return isValid;
-    }
+            return isValid;
+        }
 
-    // Wait for Webflow submission
-    function waitForWebflowSubmission(redirectUrl) {
-        var submitted = false;
-        var timeoutId;
+        function waitForWebflowSubmission(redirectUrl) {
+            var submitted = false;
+            var timeoutId;
 
-        var successHandler = function () {
-            if (!submitted) {
+            var successHandler = function () {
+                if (submitted) return;
                 submitted = true;
                 clearTimeout(timeoutId);
-                setTimeout(function () {
-                    window.location.href = redirectUrl;
-                }, 500);
-            }
-        };
+                setTimeout(function () { window.location.href = redirectUrl; }, 500);
+            };
 
-        var errorHandler = function () {
-            if (!submitted) {
+            var errorHandler = function () {
+                if (submitted) return;
                 submitted = true;
                 clearTimeout(timeoutId);
-                customSubmitBtn.textContent = "Submit";
+                customSubmitBtn.textContent = 'Submit';
                 customSubmitBtn.disabled = false;
                 alert('Form submission failed. Please try again.');
-            }
-        };
+            };
 
-        document.addEventListener('webflow:success', successHandler);
-        document.addEventListener('webflow:error', errorHandler);
+            document.addEventListener('webflow:success', successHandler);
+            document.addEventListener('webflow:error', errorHandler);
 
-        var checkForWebflowResponse = function () {
-            var successDiv = document.querySelector('.w-form-done');
-            var errorDiv = document.querySelector('.w-form-fail');
+            var poll = function () {
+                var successDiv = document.querySelector('.w-form-done');
+                var errorDiv = document.querySelector('.w-form-fail');
+                if (successDiv && successDiv.style.display !== 'none') return successHandler();
+                if (errorDiv && errorDiv.style.display !== 'none') return errorHandler();
+                if (!submitted) setTimeout(poll, 100);
+            };
+            setTimeout(poll, 100);
 
-            if (successDiv && successDiv.style.display !== 'none') {
-                successHandler();
-                return;
-            }
-            if (errorDiv && errorDiv.style.display !== 'none') {
-                errorHandler();
-                return;
-            }
-            if (!submitted) {
-                setTimeout(checkForWebflowResponse, 100);
-            }
-        };
-
-        setTimeout(checkForWebflowResponse, 100);
-
-        timeoutId = setTimeout(function () {
-            if (!submitted) {
+            timeoutId = setTimeout(function () {
+                if (submitted) return;
                 submitted = true;
                 console.log('Webflow submission timeout - redirecting anyway');
                 window.location.href = redirectUrl;
-            }
-        }, 3000);
+            }, 3000);
+        }
 
-        return function cleanup() {
-            clearTimeout(timeoutId);
-            document.removeEventListener('webflow:success', successHandler);
-            document.removeEventListener('webflow:error', errorHandler);
-        };
+        customSubmitBtn.addEventListener('click', async function (event) {
+            event.preventDefault();
+            if (!validateForm()) return;
+
+            customSubmitBtn.textContent = 'Please wait...';
+            customSubmitBtn.disabled = true;
+
+            try {
+                // The phone number is sent EXACTLY as it sits in the field, in
+                // national format. Do not reformat to international here - the
+                // API rejects it. The international switch happens only on the
+                // Webflow submit below, same as v1.
+                var formData = {
+                    email: workEmail.value,
+                    firstname: document.getElementById('first-name-l').value,
+                    lastname: document.getElementById('last-name-l').value,
+                    companyname: document.getElementById('company-name-l').value,
+                    country: document.getElementById('country-selected-l').value,
+                    phone: phoneInput.value.replace(/[\s\-\(\)]/g, ''),
+                    queryString: window.location.search,
+                    source: 'Website'
+                };
+
+                var response = await fetch(
+                    'https://production-api.prezent.ai/trial/register',
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify([formData])
+                    }
+                );
+
+                var data = await response.json();
+                var userAlreadyExist = data.data[0].userAlreadyExist;
+                var companyRegistered = data.data[0].companyRegistered;
+
+                if (userAlreadyExist === true) {
+                    window.location.href = '/redirection-successful';
+                } else if (userAlreadyExist === false && companyRegistered === true) {
+                    if (form.checkValidity()) {
+                        waitForWebflowSubmission('/registration-successful');
+                        originalSubmitBtn.click();
+                    }
+                } else if (userAlreadyExist === false && companyRegistered === false) {
+                    if (form.checkValidity()) {
+                        waitForWebflowSubmission('/thank-you');
+                        originalSubmitBtn.click();
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+                customSubmitBtn.textContent = 'Submit';
+                customSubmitBtn.disabled = false;
+            }
+        });
+
+        // Clear the error state as the user corrects a field
+        form.querySelectorAll('[required]').forEach(function (field) {
+            field.addEventListener('input', function () {
+                if (field.id === 'phone-number-l') {
+                    if (validatePhoneNumber(field.value)) {
+                        field.classList.remove('error');
+                        var errMsg = field.nextElementSibling;
+                        if (errMsg && errMsg.classList.contains('error-message')) {
+                            errMsg.remove();
+                        }
+                    }
+                } else if (field.value.trim()) {
+                    field.classList.remove('error');
+                }
+            });
+        });
+
+        var style = document.createElement('style');
+        style.textContent =
+            '.error { border-color: red !important; background-color: #fff0f0; } ' +
+            '.error-message { color: red; font-size: 0.8em; margin-top: 4px; }';
+        document.head.appendChild(style);
+
+        // Hand off to the lazy tiers
+        whenNeeded(form, ['focusin', 'pointerdown', 'touchstart'], function () {
+            initPhoneWidget();
+        });
     }
 
-    // Custom submit button click handler
-    customSubmitBtn.addEventListener('click', async function (event) {
-        event.preventDefault();
 
-        if (!validateForm()) {
+    /* ========================================================
+       TIER 2 / TIER 3 - PHONE WIDGET
+       ======================================================== */
+
+    function initPhoneWidget() {
+        var inputs = document.querySelectorAll('input[ms-code-phone-number]');
+        if (!inputs.length) return;
+
+        loadStylesheet(ITI_BASE + '/css/intlTelInput.min.css');
+
+        loadScript(ITI_BASE + '/js/intlTelInput.min.js')
+            .then(function () {
+                inputs.forEach(setupPhoneInput);
+            })
+            .catch(function (err) {
+                // Non-fatal: the phone field stays a plain text input and the
+                // country field keeps the value seeded in Tier 1, so the form
+                // still submits.
+                console.error('intl-tel-input failed to load:', err);
+            });
+    }
+
+    function setupPhoneInput(input) {
+        var preferredCountries = (input.getAttribute('ms-code-phone-number') || '')
+            .split(',')
+            .map(function (c) { return c.trim(); })
+            .filter(Boolean);
+
+        var countryField = document.getElementById('country-selected-l');
+
+        var iti = window.intlTelInput(input, {
+            preferredCountries: preferredCountries,
+            // utils.js is NOT passed here on purpose. Letting the library fetch
+            // it would pull 241 KB for every visitor. It is loaded in Tier 3
+            // instead, only when someone actually touches the phone field.
+            autoPlaceholder: 'off'
+        });
+
+        function utilsReady() {
+            return typeof window.intlTelInputUtils !== 'undefined';
+        }
+
+        // Keep the hidden country field in step with the flag. Uses
+        // intl-tel-input's own country name, so the submitted value matches v1.
+        function syncCountryField() {
+            if (!countryField) return;
+            var d = iti.getSelectedCountryData();
+            if (d && d.name) countryField.value = d.name;
+        }
+
+        input.addEventListener('countrychange', syncCountryField);
+
+        // Apply the country the Tier 1 IP lookup already found
+        var geo = window.__prezentGeoCountry;
+        if (geo) {
+            iti.setCountry(String(geo).toLowerCase());
+        }
+        syncCountryField();
+
+        /* ---- TIER 3: utils.js, on first real interaction only ---- */
+        function formatNational() {
+            if (!utilsReady()) return;
+            var formatted = iti.getNumber(intlTelInputUtils.numberFormat.NATIONAL);
+            if (formatted) input.value = formatted;
+        }
+
+        onFirstInteraction(
+            input,
+            ['focus', 'pointerdown', 'touchstart', 'input', 'change'],
+            function () {
+                loadScript(ITI_BASE + '/js/utils.js')
+                    .then(function () {
+                        // Format whatever is already typed
+                        formatNational();
+                    })
+                    .catch(function (err) {
+                        console.error('intl-tel-input utils failed to load:', err);
+                    });
+            }
+        );
+
+        input.addEventListener('change', formatNational);
+        input.addEventListener('keyup', formatNational);
+
+        // Switch to international format for the Webflow record only.
+        formatPhoneForWebflowSubmit = function () {
+            if (!utilsReady()) return;
+            var formatted = iti.getNumber(intlTelInputUtils.numberFormat.INTERNATIONAL);
+            if (formatted) input.value = formatted;
+        };
+
+        var form = input.closest('form');
+        if (form) {
+            form.addEventListener('submit', function () {
+                formatPhoneForWebflowSubmit();
+            });
+        }
+    }
+
+
+    /* ========================================================
+       3. SWIPER - e-book carousel
+       Uses whichever Swiper the site already loads (currently v8).
+       This file never loads its own copy.
+       ======================================================== */
+
+    function initEbookSwiper() {
+        if (!document.querySelector('.e-book')) return;
+        if (typeof Swiper === 'undefined') {
+            console.warn('Swiper not found - e-book carousel skipped');
             return;
         }
 
-        customSubmitBtn.textContent = "Please wait...";
-        customSubmitBtn.disabled = true;
-
-        try {
-            // Make sure the phone number is in international format before sending,
-            // even if the phone widget finished loading late.
-            formatPhoneForSubmit();
-
-            var formData = {
-                email: workEmail.value,
-                firstname: document.getElementById('first-name-l').value,
-                lastname: document.getElementById('last-name-l').value,
-                companyname: document.getElementById('company-name-l').value,
-                country: document.getElementById('country-selected-l').value,
-                phone: phoneInput.value.replace(/[\s\-\(\)]/g, ''),
-                queryString: window.location.search,
-                source: "Website"
-            };
-
-            var response = await fetch('https://production-api.prezent.ai/trial/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify([formData])
-            });
-
-            var data = await response.json();
-            var userAlreadyExist = data.data[0].userAlreadyExist;
-            var companyRegistered = data.data[0].companyRegistered;
-
-            if (userAlreadyExist === true) {
-                window.location.href = "/redirection-successful";
-            } else if (userAlreadyExist === false && companyRegistered === true) {
-                if (form.checkValidity()) {
-                    waitForWebflowSubmission("/registration-successful");
-                    originalSubmitBtn.click();
-                }
-            } else if (userAlreadyExist === false && companyRegistered === false) {
-                if (form.checkValidity()) {
-                    waitForWebflowSubmission("/thank-you");
-                    originalSubmitBtn.click();
-                }
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            alert('An error occurred. Please try again.');
-            customSubmitBtn.textContent = "Submit";
-            customSubmitBtn.disabled = false;
-        }
-    });
-
-    // Remove error class on input
-    form.querySelectorAll('[required]').forEach(function (field) {
-        field.addEventListener('input', function () {
-            if (field.id === 'phone-number-l') {
-                if (validatePhoneNumber(field.value)) {
-                    field.classList.remove('error');
-                    var errMsg = field.nextElementSibling;
-                    if (errMsg && errMsg.classList.contains('error-message')) {
-                        errMsg.remove();
-                    }
-                }
-            } else {
-                if (field.value.trim()) {
-                    field.classList.remove('error');
-                }
+        new Swiper('.e-book', {
+            effect: 'coverflow',
+            grabCursor: true,
+            loop: true,
+            centeredSlides: false,
+            initialSlide: 1,
+            slidesPerGroup: 2,
+            speed: 800,
+            coverflowEffect: {
+                rotate: 50,
+                stretch: 0,
+                depth: 100,
+                modifier: 1,
+                slideShadows: true
+            },
+            autoplay: { delay: 3000, disableOnInteraction: false },
+            breakpoints: {
+                300: { slidesPerView: 1, initialSlide: 0, slidesPerGroup: 1 },
+                480: { slidesPerView: 1.2, initialSlide: 0, slidesPerGroup: 1 },
+                768: { slidesPerView: 2 },
+                992: { slidesPerView: 2.2, initialSlide: 0, slidesPerGroup: 1 }
+            },
+            pagination: { el: '.swiper-pagination' },
+            navigation: {
+                nextEl: '.swiper-button-next',
+                prevEl: '.swiper-button-prev'
             }
         });
-    });
-
-    // Inject error CSS
-    var style = document.createElement('style');
-    style.textContent =
-        '.error { border-color: red !important; background-color: #fff0f0; } ' +
-        '.error-message { color: red; font-size: 0.8em; margin-top: 4px; }';
-    document.head.appendChild(style);
-
-    /* ---- Phone input is set up lazily, see section 3 ---- */
-    whenNeeded(form, function () { initPhoneInputs(form); });
-});
-
-
-/* ============================================
-   3. PHONE INPUT (lazy intl-tel-input + country sync)
-   ============================================ */
-var ITI_VERSION = '17.0.8';
-var ITI_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/' + ITI_VERSION;
-var ITI_UTILS = ITI_BASE + '/js/utils.js';
-
-// Set by initPhoneInputs so the submit handler can reformat the number.
-var formatPhoneForSubmit = function () {};
-
-function initPhoneInputs(scope) {
-    var inputs = (scope || document).querySelectorAll('input[ms-code-phone-number]');
-    if (!inputs.length) return;
-
-    loadStylesheet(ITI_BASE + '/css/intlTelInput.min.css');
-
-    loadScript(ITI_BASE + '/js/intlTelInput.min.js')
-        .then(function () {
-            inputs.forEach(setupPhoneInput);
-        })
-        .catch(function (err) {
-            console.error('intl-tel-input failed to load', err);
-            // The form still works: the phone field stays a plain text input,
-            // and the country field falls back to the IP lookup below.
-            syncCountryFromIP(null);
-        });
-}
-
-function setupPhoneInput(input) {
-    var preferredCountries = (input.getAttribute('ms-code-phone-number') || '')
-        .split(',')
-        .map(function (c) { return c.trim(); })
-        .filter(Boolean);
-
-    var countryInput = document.getElementById('country-selected-l');
-
-    var iti = window.intlTelInput(input, {
-        preferredCountries: preferredCountries,
-        // intl-tel-input fetches this itself, asynchronously, so it never blocks.
-        utilsScript: ITI_UTILS
-    });
-
-    function utilsReady() {
-        return typeof window.intlTelInputUtils !== 'undefined';
     }
 
-    function syncCountryField() {
-        if (!countryInput) return;
-        var countryData = iti.getSelectedCountryData();
-        if (countryData && countryData.name) {
-            countryInput.value = countryData.name;
+
+    /* ========================================================
+       BOOT
+       ======================================================== */
+
+    onReady(function () {
+        // Tier 1 - instant
+        checkUTMParameters();
+        initGeotargeting();
+        seedCountryField();
+        initForm();
+
+        // Carousel: site-wide Swiper 8 is deferred, so it may land after us.
+        if (typeof Swiper !== 'undefined') {
+            initEbookSwiper();
+        } else {
+            window.addEventListener('load', initEbookSwiper, { once: true });
         }
-    }
-
-    // ---- COUNTRY SYNC: update hidden field when flag changes ----
-    input.addEventListener('countrychange', syncCountryField);
-
-    // Auto-detect country from IP and sync
-    syncCountryFromIP(function (countryCode) {
-        if (countryCode) iti.setCountry(countryCode.toLowerCase());
-        syncCountryField();
     });
-
-    // Format phone number as the user types (only once utils.js has arrived)
-    function formatPhoneNumber() {
-        if (!utilsReady()) return;
-        var formatted = iti.getNumber(intlTelInputUtils.numberFormat.NATIONAL);
-        if (formatted) input.value = formatted;
-    }
-
-    input.addEventListener('change', formatPhoneNumber);
-    input.addEventListener('keyup', formatPhoneNumber);
-
-    // Switch to international format on submit
-    formatPhoneForSubmit = function () {
-        if (!utilsReady()) return;
-        var formatted = iti.getNumber(intlTelInputUtils.numberFormat.INTERNATIONAL);
-        if (formatted) input.value = formatted;
-    };
-
-    var form = input.closest('form');
-    if (form) form.addEventListener('submit', formatPhoneForSubmit);
-
-    // Make sure the hidden country field is never left empty.
-    syncCountryField();
-}
-
-// Plain fetch instead of jQuery JSONP, with a timeout so a slow
-// lookup can never hold up the form.
-function syncCountryFromIP(callback) {
-    var controller = ('AbortController' in window) ? new AbortController() : null;
-    var timer = setTimeout(function () { if (controller) controller.abort(); }, 2000);
-
-    fetch('https://ipinfo.io/json', {
-        signal: controller ? controller.signal : undefined
-    })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-            clearTimeout(timer);
-            if (callback) callback(data && data.country ? data.country : null);
-        })
-        .catch(function () {
-            clearTimeout(timer);
-            if (callback) callback(null);
-        });
-}
-
-
-/* ============================================
-   4. GEOTARGETING (conditional on path)
-   ============================================ */
-onReady(function () {
-    if (window.location.href.indexOf('/registration/platform') !== -1) {
-        (function (g, e) {
-            var s = function () {
-                var def = 'geotargetlygeocontent1711351295995_default';
-                var nodes = g.getElementsByClassName(def);
-                for (var i = 0; i < nodes.length; i++) {
-                    nodes[i].style.display = 'inline';
-                }
-            };
-            var t = g.getElementsByTagName(e)[0];
-            var y = g.createElement(e);
-            y.async = true;
-            y.src = 'https://g1584674684.co/gc?winurl=' + encodeURIComponent(window.location) + '&refurl=' + g.referrer + '&id=-NtoU5wvSHI2ffsEI_Mk';
-            t.parentNode.insertBefore(y, t);
-            y.onerror = function () { s(); };
-        })(document, 'script');
-    } else {
-        var elements = document.getElementsByClassName('geotargetlygeocontent1711351295995_content_2');
-        for (var i = 0; i < elements.length; i++) {
-            elements[i].style.display = 'block';
-        }
-    }
-});
-
-
-/* ============================================
-   5. SWIPER (e-book carousel)
-   ============================================ */
-onReady(function () {
-    var el = document.querySelector('.e-book');
-    if (!el || typeof Swiper === 'undefined') return;
-
-    new Swiper('.e-book', {
-        effect: "coverflow",
-        grabCursor: true,
-        loop: true,
-        centeredSlides: false,
-        initialSlide: 1,
-        slidesPerGroup: 2,
-        speed: 800,
-        coverflowEffect: {
-            rotate: 50,
-            stretch: 0,
-            depth: 100,
-            modifier: 1,
-            slideShadows: true,
-        },
-        autoplay: {
-            delay: 3000,
-            disableOnInteraction: false,
-        },
-        breakpoints: {
-            300: { slidesPerView: 1, initialSlide: 0, slidesPerGroup: 1 },
-            480: { slidesPerView: 1.2, initialSlide: 0, slidesPerGroup: 1 },
-            768: { slidesPerView: 2 },
-            992: { slidesPerView: 2.2, initialSlide: 0, slidesPerGroup: 1 }
-        },
-        pagination: { el: ".swiper-pagination" },
-        navigation: {
-            nextEl: '.swiper-button-next',
-            prevEl: '.swiper-button-prev',
-        },
-    });
-});
+})();
