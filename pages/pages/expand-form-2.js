@@ -236,28 +236,39 @@
        lookup, so the form is never blocked by a library. intl-tel-input
        overwrites it with its own country name once it loads (Tier 2), keeping
        the submitted value identical to v1. */
+    // Resolves to a 2-letter country code, or null. Kicked off immediately so
+    // the lookup overlaps the rest of the page load. The phone widget WAITS on
+    // this promise rather than reading a variable, so it can never race ahead
+    // and fall back to the wrong country.
+    var geoPromise = null;
+
     function seedCountryField() {
         var field = document.getElementById('country-selected-l');
-        if (!field) return;
 
         var controller = ('AbortController' in window) ? new AbortController() : null;
         var timer = setTimeout(function () { if (controller) controller.abort(); }, 2500);
 
-        fetch('https://ipinfo.io/json', {
+        geoPromise = fetch('https://ipinfo.io/json', {
             signal: controller ? controller.signal : undefined
         })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (data) {
                 clearTimeout(timer);
-                var code = data && data.country;
-                window.__prezentGeoCountry = code || null;
-                if (code && !field.value.trim()) {
-                    field.value = countryNameFromCode(code);
-                }
+                return (data && data.country) ? data.country : null;
             })
             .catch(function () {
                 clearTimeout(timer);
-                window.__prezentGeoCountry = null;
+                return null;
+            })
+            .then(function (code) {
+                window.__prezentGeoCountry = code;
+                // Seed the required field so it is never empty, even if the
+                // phone widget never loads. intl-tel-input overwrites this
+                // with its own country name once ready.
+                if (field && code && !field.value.trim()) {
+                    field.value = countryNameFromCode(code);
+                }
+                return code;
             });
     }
 
@@ -289,11 +300,13 @@
         function validateForm() {
             var requiredFields = form.querySelectorAll('[required]');
             var isValid = true;
+            var failed = [];
 
             requiredFields.forEach(function (field) {
                 if (!field.value.trim()) {
                     isValid = false;
                     field.classList.add('error');
+                    failed.push(field);
                     return;
                 }
 
@@ -320,6 +333,22 @@
                     field.classList.remove('error');
                 }
             });
+
+            // A required field that is display:none cannot show its red border,
+            // so an empty one makes the button look completely dead. Shout
+            // about it in the console instead of failing silently - this is
+            // what a blank hidden company-name / country field looks like.
+            var hiddenFailures = failed.filter(function (f) {
+                return f.offsetParent === null || getComputedStyle(f).display === 'none';
+            });
+            if (hiddenFailures.length) {
+                console.error(
+                    '[prezent-form] Submit blocked by HIDDEN required field(s): ' +
+                    hiddenFailures.map(function (f) { return '#' + f.id; }).join(', ') +
+                    '. They are empty and invisible, so no error can be shown to the ' +
+                    'user. Give them a value in Webflow or remove "required".'
+                );
+            }
 
             return isValid;
         }
@@ -503,12 +532,18 @@
 
         input.addEventListener('countrychange', syncCountryField);
 
-        // Apply the country the Tier 1 IP lookup already found
-        var geo = window.__prezentGeoCountry;
-        if (geo) {
-            iti.setCountry(String(geo).toLowerCase());
-        }
+        // Set the field straight away from whatever flag the library picked, so
+        // it is never empty...
         syncCountryField();
+
+        // ...then wait for the IP lookup and correct it. Waiting on the promise
+        // is what stops the widget winning the race and leaving the default
+        // preferred country (Canada) in place for a visitor in Morocco.
+        Promise.resolve(geoPromise).then(function (code) {
+            if (!code) return;
+            iti.setCountry(String(code).toLowerCase());
+            syncCountryField();
+        });
 
         /* ---- TIER 3: utils.js, on first real interaction only ---- */
         function formatNational() {
