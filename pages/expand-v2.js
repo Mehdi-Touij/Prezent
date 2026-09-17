@@ -591,7 +591,7 @@
        3. SWIPER - 
        ======================================================== */
 
- <script>
+
 document.addEventListener('DOMContentLoaded', function () {
   new Swiper('.expswiper', {
     slidesPerView: 3,
@@ -611,12 +611,12 @@ document.addEventListener('DOMContentLoaded', function () {
     },
   });
 });
-</script>
 
 
 
 
-<script>
+
+
 document.addEventListener('DOMContentLoaded', function () {
   new Swiper('.expswiper-2', {
     slidesPerView:1,
@@ -636,7 +636,7 @@ document.addEventListener('DOMContentLoaded', function () {
     },
   });
 });
-</script>
+
 
 
     /* ========================================================
