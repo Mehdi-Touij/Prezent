@@ -434,7 +434,7 @@
                     window.location.href = '/redirection-successful';
                 } else if (userAlreadyExist === false && companyRegistered === true) {
                     if (form.checkValidity()) {
-                        waitForWebflowSubmission('/registration-successful');
+                        waitForWebflowSubmission('/trial-confirmation-exp');
                         originalSubmitBtn.click();
                     }
                 } else if (userAlreadyExist === false && companyRegistered === false) {
